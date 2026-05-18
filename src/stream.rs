@@ -18,6 +18,23 @@ fn codec_rank(codec: Option<&str>) -> u8 {
 
 // ── Station search ────────────────────────────────────────────────────────────
 
+pub async fn fetch_top_voted(
+    client: &Client,
+    limit: usize,
+) -> Result<Vec<RadioStation>, reqwest::Error> {
+    let mut stations = client
+        .get(format!(
+            "https://de1.api.radio-browser.info/json/stations/topvote/{limit}"
+        ))
+        .send()
+        .await?
+        .json::<Vec<RadioStation>>()
+        .await?;
+
+    stations.retain(|s| !s.name.is_empty() && !s.url.is_empty());
+    Ok(stations)
+}
+
 pub async fn fetch_stations(
     client: &Client,
     query: StationQuery,

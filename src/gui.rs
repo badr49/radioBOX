@@ -1,6 +1,6 @@
 use eframe::egui;
 use egui::{
-    Color32, Frame, Layout, Margin, RichText, ScrollArea, Separator, Spinner, Stroke, Vec2,
+    Color32, Frame, Layout, Margin, RichText, ScrollArea, Spinner, Stroke, Vec2,
 };
 use reqwest::Client;
 use std::sync::{Arc, Mutex};
@@ -8,18 +8,22 @@ use tokio::runtime::Runtime;
 
 use crate::config::{RadioStation, StationQuery};
 use crate::player::Player;
-use crate::stream::fetch_stations;
+use crate::stream::{fetch_stations, fetch_top_voted};
 
 // ── Palette ───────────────────────────────────────────────────────────────────
+// Matches the website: pure black + green accent (#b8e986)
 
-const BG:        Color32 = Color32::from_rgb(15,  15,  18);
-const SURFACE:   Color32 = Color32::from_rgb(22,  22,  28);
-const SURFACE2:  Color32 = Color32::from_rgb(30,  30,  38);
-const ACCENT:    Color32 = Color32::from_rgb(220, 80,  80);
-const ACCENT_DIM:Color32 = Color32::from_rgb(120, 35,  35);
-const TEXT:      Color32 = Color32::from_rgb(220, 220, 225);
-const SUBTEXT:   Color32 = Color32::from_rgb(120, 120, 130);
-const GREEN:     Color32 = Color32::from_rgb(80,  200, 120);
+const BG:         Color32 = Color32::from_rgb(0,   0,   0);    // pure black
+const SURFACE:    Color32 = Color32::from_rgb(0,  0,  0);   // sidebar / panel
+const SURFACE2:   Color32 = Color32::from_rgb(18,  18,  20);   // cards
+const SURFACE3:   Color32 = Color32::from_rgb(28,  28,  32);   // hovered card
+const ACCENT:     Color32 = Color32::from_rgb(184, 233, 134);  // #b8e986 green
+const ACCENT_DIM: Color32 = Color32::from_rgb(90,  120, 55);   // dimmed green
+const BORDER:     Color32 = Color32::from_rgb(40,  40,  46);   // subtle border
+const BORDER_ACC: Color32 = Color32::from_rgb(60,  80,  35);   // green-tinted border
+const TEXT:       Color32 = Color32::from_rgb(230, 230, 230);  // primary text
+const SUBTEXT:    Color32 = Color32::from_rgb(100, 100, 108);  // muted text
+const GREEN:      Color32 = Color32::from_rgb(184, 233, 134);  // playing indicator = accent
 
 // ── Genre presets ─────────────────────────────────────────────────────────────
 
@@ -67,7 +71,7 @@ pub struct RadioApp {
 impl RadioApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         apply_theme(&cc.egui_ctx);
-        Self {
+        let mut app = Self {
             q_name:       String::new(),
             q_genre:      String::new(),
             q_country:    String::new(),
@@ -78,7 +82,21 @@ impl RadioApp {
             now_playing:  None,
             rt:           Runtime::new().expect("tokio runtime"),
             client:       Client::new(),
-        }
+        };
+        app.trigger_top_voted();
+        app
+    }
+
+    fn trigger_top_voted(&mut self) {
+        let state  = Arc::clone(&self.search_state);
+        let client = self.client.clone();
+        *state.lock().unwrap() = SearchState::Loading;
+        self.rt.spawn(async move {
+            match fetch_top_voted(&client, 50).await {
+                Ok(s)  => *state.lock().unwrap() = SearchState::Done(s),
+                Err(e) => *state.lock().unwrap() = SearchState::Error(e.to_string()),
+            }
+        });
     }
 
     fn trigger_search(&mut self) {
@@ -110,23 +128,49 @@ fn non_empty(s: &str) -> Option<String> {
 
 fn apply_theme(ctx: &egui::Context) {
     let mut style = (*ctx.style()).clone();
-    style.visuals.window_fill        = BG;
-    style.visuals.panel_fill         = BG;
-    style.visuals.faint_bg_color     = SURFACE;
-    style.visuals.extreme_bg_color   = SURFACE2;
-    style.visuals.override_text_color = Some(TEXT);
-    style.visuals.widgets.noninteractive.bg_fill   = SURFACE;
-    style.visuals.widgets.noninteractive.fg_stroke  = Stroke::new(1.0, SUBTEXT);
-    style.visuals.widgets.inactive.bg_fill          = SURFACE2;
-    style.visuals.widgets.inactive.fg_stroke        = Stroke::new(1.0, TEXT);
-    style.visuals.widgets.hovered.bg_fill           = Color32::from_rgb(40, 40, 52);
-    style.visuals.widgets.hovered.fg_stroke         = Stroke::new(1.0, TEXT);
-    style.visuals.widgets.active.bg_fill            = ACCENT_DIM;
-    style.visuals.widgets.active.fg_stroke          = Stroke::new(1.0, TEXT);
-    style.visuals.selection.bg_fill                 = ACCENT_DIM;
-    style.visuals.selection.stroke                  = Stroke::new(1.0, ACCENT);
-    style.spacing.item_spacing                      = Vec2::new(6.0, 4.0);
-    style.spacing.button_padding                    = Vec2::new(8.0, 4.0);
+
+    style.visuals.window_fill             = BG;
+    style.visuals.panel_fill              = BG;
+    style.visuals.faint_bg_color          = SURFACE;
+    style.visuals.extreme_bg_color        = SURFACE2;
+    style.visuals.override_text_color     = Some(TEXT);
+
+    // borders
+    style.visuals.widgets.noninteractive.bg_fill        = SURFACE;
+    style.visuals.widgets.noninteractive.bg_stroke      = Stroke::new(1.0, BORDER);
+    style.visuals.widgets.noninteractive.fg_stroke      = Stroke::new(1.0, SUBTEXT);
+    style.visuals.widgets.noninteractive.corner_radius  = 6.0.into();
+
+    style.visuals.widgets.inactive.bg_fill              = SURFACE2;
+    style.visuals.widgets.inactive.bg_stroke            = Stroke::new(1.0, BORDER);
+    style.visuals.widgets.inactive.fg_stroke            = Stroke::new(1.0, TEXT);
+    style.visuals.widgets.inactive.corner_radius        = 6.0.into();
+
+    style.visuals.widgets.hovered.bg_fill               = SURFACE3;
+    style.visuals.widgets.hovered.bg_stroke             = Stroke::new(1.0, BORDER_ACC);
+    style.visuals.widgets.hovered.fg_stroke             = Stroke::new(1.0, ACCENT);
+    style.visuals.widgets.hovered.corner_radius         = 6.0.into();
+
+    style.visuals.widgets.active.bg_fill                = ACCENT_DIM;
+    style.visuals.widgets.active.bg_stroke              = Stroke::new(1.0, ACCENT);
+    style.visuals.widgets.active.fg_stroke              = Stroke::new(1.0, Color32::BLACK);
+    style.visuals.widgets.active.corner_radius          = 6.0.into();
+
+    style.visuals.selection.bg_fill                     = ACCENT_DIM;
+    style.visuals.selection.stroke                      = Stroke::new(1.0, ACCENT);
+
+    // text cursor
+    style.visuals.text_cursor.stroke.color              = ACCENT;
+
+    // spacing — tighter, more modern
+    style.spacing.item_spacing                          = Vec2::new(8.0, 5.0);
+    style.spacing.button_padding                        = Vec2::new(14.0, 7.0);
+    style.spacing.indent                                = 14.0;
+    style.spacing.interact_size                         = Vec2::new(20.0, 20.0);
+
+    style.visuals.window_corner_radius                  = 10.0.into();
+    style.visuals.menu_corner_radius                    = 8.0.into();
+
     ctx.set_style(style);
 }
 
@@ -135,31 +179,41 @@ fn apply_theme(ctx: &egui::Context) {
 fn text_input(ui: &mut egui::Ui, value: &mut String, hint: &str) {
     ui.add(
         egui::TextEdit::singleline(value)
-            .hint_text(hint)
+            .hint_text(RichText::new(hint).color(SUBTEXT))
             .desired_width(f32::INFINITY)
             .font(egui::TextStyle::Body)
             .text_color(TEXT)
-            .frame(true),
+            .frame(true)
+            .margin(Vec2::new(10.0, 7.0)),
     );
 }
 
+fn filter_row(ui: &mut egui::Ui, label: &str, value: &mut String, hint: &str) {
+    ui.label(RichText::new(label).size(10.0).color(SUBTEXT));
+    text_input(ui, value, hint);
+    ui.add_space(5.0);
+}
+
 fn section_label(ui: &mut egui::Ui, label: &str) {
-    ui.add_space(6.0);
-    ui.label(RichText::new(label).small().color(SUBTEXT));
-    ui.add_space(2.0);
+    ui.add_space(10.0);
+    ui.label(
+        RichText::new(label)
+            .size(9.5)
+            .color(SUBTEXT)
+            .extra_letter_spacing(1.2),
+    );
+    ui.add_space(3.0);
 }
 
 // ── Main render ───────────────────────────────────────────────────────────────
 
 impl eframe::App for RadioApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // repaint while loading or playing (for uptime / metrics ticker)
         let loading = matches!(*self.search_state.lock().unwrap(), SearchState::Loading);
         if loading || self.player.is_playing() {
             ctx.request_repaint_after(std::time::Duration::from_millis(500));
         }
 
-        // quit on close
         if ctx.input(|i| i.viewport().close_requested()) {
             self.player.stop();
         }
@@ -167,41 +221,64 @@ impl eframe::App for RadioApp {
         // ── Left sidebar ───────────────────────────────────────────────────
         egui::SidePanel::left("sidebar")
             .resizable(false)
-            .exact_width(220.0)
-            .frame(Frame::new().fill(SURFACE).inner_margin(Margin::same(12)))
+            .exact_width(230.0)
+            .frame(
+                Frame::new()
+                    .fill(SURFACE)
+                    .inner_margin(Margin::same(14))
+                    .stroke(Stroke::new(1.0, BORDER)),
+            )
             .show(ctx, |ui| {
-                // title + quit
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("📻 radioBOX").size(16.0).color(TEXT).strong());
+                    ui.label(RichText::new("radioBOX").size(16.0).color(TEXT).strong());
+                    let (rect, _) = ui.allocate_exact_size(Vec2::new(6.0, 6.0), egui::Sense::hover());
+                    ui.painter().circle_filled(rect.center(), 3.0, ACCENT);
                     ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
-                        let q = egui::Button::new(RichText::new("✕").size(12.0).color(SUBTEXT))
+                        let q = egui::Button::new(RichText::new("\u{E219}").size(12.0).color(SUBTEXT))
                             .fill(Color32::TRANSPARENT)
-                            .stroke(Stroke::NONE);
+                            .stroke(Stroke::NONE)
+                            .corner_radius(4.0);
                         if ui.add(q).on_hover_text("Quit").clicked() {
                             self.player.stop();
                             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                         }
                     });
                 });
-
-                ui.add(Separator::default().spacing(10.0));
+                ui.add_space(10.0);
 
                 // ── Genre pills ────────────────────────────────────────────
                 section_label(ui, "GENRE");
                 egui::ScrollArea::vertical()
                     .id_salt("genre_scroll")
-                    .max_height(200.0)
+                    .max_height(410.0)
                     .show(ui, |ui| {
                         ui.horizontal_wrapped(|ui| {
-                            ui.spacing_mut().item_spacing = Vec2::new(3.0, 3.0);
+                            ui.spacing_mut().item_spacing = Vec2::new(4.0, 4.0);
+
+                            // ── Top Rated pill (special) ───────────────────
+                            let top_btn = egui::Button::new(
+                                RichText::new("⭐ Top Rated").size(10.0).color(Color32::BLACK).strong(),
+                            )
+                            .fill(ACCENT)
+                            .corner_radius(100.0)
+                            .stroke(Stroke::NONE)
+                            .min_size(Vec2::new(0.0, 22.0));
+                            if ui.add(top_btn).on_hover_text("Top 50 most voted stations").clicked() {
+                                self.q_genre = String::new();
+                                self.trigger_top_voted();
+                            }
+
                             for &g in GENRES {
                                 let active = self.q_genre.eq_ignore_ascii_case(g);
                                 let btn = egui::Button::new(
-                                    RichText::new(g).size(11.0).color(if active { Color32::WHITE } else { SUBTEXT })
+                                    RichText::new(g).size(10.0).color(
+                                        if active { Color32::BLACK } else { SUBTEXT },
+                                    ),
                                 )
                                 .fill(if active { ACCENT } else { SURFACE2 })
-                                .corner_radius(10.0)
-                                .stroke(Stroke::NONE);
+                                .corner_radius(100.0)
+                                .stroke(if active { Stroke::NONE } else { Stroke::new(1.0, BORDER) })
+                                .min_size(Vec2::new(0.0, 22.0));
                                 if ui.add(btn).clicked() {
                                     self.q_genre = if active { String::new() } else { g.to_string() };
                                 }
@@ -209,39 +286,22 @@ impl eframe::App for RadioApp {
                         });
                     });
 
-                ui.add(Separator::default().spacing(10.0));
-
                 // ── Filters ────────────────────────────────────────────────
                 section_label(ui, "FILTERS");
-
-                ui.label(RichText::new("Station name").size(11.0).color(SUBTEXT));
-                text_input(ui, &mut self.q_name, "e.g. BBC Radio 1");
-                ui.add_space(4.0);
-
-                ui.label(RichText::new("Genre / tag").size(11.0).color(SUBTEXT));
-                text_input(ui, &mut self.q_genre, "or type here");
-                ui.add_space(4.0);
-
-                ui.label(RichText::new("Country code").size(11.0).color(SUBTEXT));
-                text_input(ui, &mut self.q_country, "DE  US  GB …");
-                ui.add_space(4.0);
-
-                ui.label(RichText::new("Codec").size(11.0).color(SUBTEXT));
-                text_input(ui, &mut self.q_codec, "FLAC  AAC+  MP3 …");
-                ui.add_space(4.0);
-
-                ui.label(RichText::new("Min bitrate (kbps)").size(11.0).color(SUBTEXT));
-                text_input(ui, &mut self.q_bitrate, "128");
-                ui.add_space(8.0);
+                filter_row(ui, "Station name", &mut self.q_name,    "");
+                filter_row(ui, "Genre / tag",  &mut self.q_genre,   "");
+                filter_row(ui, "Country",      &mut self.q_country, "");
+                filter_row(ui, "Codec",        &mut self.q_codec,   "");
+                ui.add_space(12.0);
 
                 let searching = matches!(*self.search_state.lock().unwrap(), SearchState::Loading);
                 let search_btn = egui::Button::new(
                     RichText::new(if searching { "Searching…" } else { "Search" })
-                        .color(Color32::WHITE)
+                        .size(13.0).color(Color32::BLACK).strong(),
                 )
                 .fill(ACCENT)
-                .corner_radius(6.0)
-                .min_size(Vec2::new(ui.available_width(), 30.0));
+                .corner_radius(8.0)
+                .min_size(Vec2::new(ui.available_width(), 38.0));
 
                 if ui.add_enabled(!searching, search_btn).clicked()
                     || (ctx.input(|i| i.key_pressed(egui::Key::Enter)) && !searching)
@@ -250,9 +310,10 @@ impl eframe::App for RadioApp {
                 }
 
                 if searching {
+                    ui.add_space(8.0);
                     ui.horizontal(|ui| {
-                        ui.add(Spinner::new().size(12.0).color(ACCENT));
-                        ui.label(RichText::new("fetching…").small().color(SUBTEXT));
+                        ui.add(Spinner::new().size(11.0).color(ACCENT));
+                        ui.label(RichText::new("fetching…").size(11.0).color(SUBTEXT));
                     });
                 }
             });
@@ -262,22 +323,24 @@ impl eframe::App for RadioApp {
             let info = self.player.info.lock().unwrap().clone();
 
             egui::TopBottomPanel::bottom("now_playing")
-                .exact_height(64.0)
-                .frame(Frame::new().fill(SURFACE2).inner_margin(Margin::symmetric(16, 10)))
+                .exact_height(68.0)
+                .frame(
+                    Frame::new()
+                        .fill(SURFACE)
+                        .inner_margin(Margin::symmetric(20, 10))
+                        .stroke(Stroke::new(1.0, BORDER_ACC)),
+                )
                 .show(ctx, |ui| {
                     ui.horizontal(|ui| {
-                        // playing indicator dot
                         let (rect, _) = ui.allocate_exact_size(Vec2::splat(8.0), egui::Sense::hover());
                         ui.painter().circle_filled(rect.center(), 4.0, GREEN);
-                        ui.add_space(6.0);
+                        ui.add_space(10.0);
 
                         ui.vertical(|ui| {
-                            // station name + media title
                             let title = info.media_title.as_deref()
                                 .unwrap_or(self.now_playing.as_deref().unwrap_or("—"));
                             ui.label(RichText::new(title).size(13.0).color(TEXT).strong());
-
-                            // metrics row
+                            ui.add_space(2.0);
                             ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = 12.0;
                                 metric(ui, "bitrate", &info.bitrate_kbps());
@@ -285,18 +348,14 @@ impl eframe::App for RadioApp {
                                     metric(ui, "codec", &info.audio_codec.to_uppercase());
                                 }
                                 if info.sample_rate > 0 {
-                                    metric(ui, "sample rate", &format!("{} Hz", info.sample_rate));
+                                    metric(ui, "sr", &format!("{} Hz", info.sample_rate));
                                 }
                                 if info.channels > 0 {
-                                    let ch = match info.channels {
-                                        1 => "Mono".into(),
-                                        2 => "Stereo".into(),
-                                        n => format!("{n}ch"),
-                                    };
-                                    metric(ui, "channels", &ch);
+                                    let ch = match info.channels { 1 => "Mono".into(), 2 => "Stereo".into(), n => format!("{n}ch") };
+                                    metric(ui, "ch", &ch);
                                 }
                                 if info.cache_duration > 0.0 {
-                                    metric(ui, "buffer", &format!("{:.1}s", info.cache_duration));
+                                    metric(ui, "buf", &format!("{:.1}s", info.cache_duration));
                                 }
                                 metric(ui, "uptime", &info.uptime());
                             });
@@ -304,29 +363,21 @@ impl eframe::App for RadioApp {
 
                         ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
                             let stop = egui::Button::new(
-                                RichText::new("⏹  Stop").color(Color32::WHITE)
+                                RichText::new("⏹  Stop").size(12.0).color(Color32::BLACK).strong(),
                             )
-                            .fill(ACCENT_DIM)
-                            .corner_radius(6.0);
+                            .fill(ACCENT)
+                            .corner_radius(7.0)
+                            .min_size(Vec2::new(72.0, 30.0));
                             if ui.add(stop).clicked() {
                                 self.player.stop();
                                 self.now_playing = None;
                             }
-
-                            ui.add_space(8.0);
-
-                            // volume slider
+                            ui.add_space(16.0);
                             let mut vol = self.player.volume as f32;
-                            let slider = egui::Slider::new(&mut vol, 0.0..=100.0)
-                                .show_value(false);
-                            if ui.add_sized(Vec2::new(80.0, 16.0), slider).changed() {
+                            if ui.add_sized(Vec2::new(90.0, 18.0), egui::Slider::new(&mut vol, 0.0..=100.0).show_value(false)).changed() {
                                 self.player.set_volume(vol as u32);
                             }
-                            ui.label(
-                                RichText::new(format!("🔊 {}%", self.player.volume))
-                                    .size(11.0)
-                                    .color(SUBTEXT),
-                            );
+                            ui.label(RichText::new(format!("🔊 {}%", self.player.volume)).size(11.0).color(SUBTEXT));
                         });
                     });
                 });
@@ -334,124 +385,105 @@ impl eframe::App for RadioApp {
 
         // ── Main results panel ─────────────────────────────────────────────
         egui::CentralPanel::default()
-            .frame(Frame::new().fill(BG).inner_margin(Margin::same(12)))
+            .frame(Frame::new().fill(BG).inner_margin(Margin::same(16)))
             .show(ctx, |ui| {
                 let state = self.search_state.lock().unwrap();
                 match &*state {
                     SearchState::Idle => {
                         ui.centered_and_justified(|ui| {
-                            ui.label(
-                                RichText::new("Search for a station to get started.")
-                                    .color(SUBTEXT)
-                                    .size(14.0),
-                            );
+                            ui.vertical(|ui| {
+                                ui.add_space(60.0);
+                                ui.label(RichText::new("📻").size(44.0).color(BORDER));
+                                ui.add_space(14.0);
+                                ui.label(RichText::new("Search for a station to get started").size(14.0).color(SUBTEXT));
+                                ui.add_space(6.0);
+                                ui.label(RichText::new("Pick a genre or use the filters on the left").size(11.5).color(Color32::from_gray(50)));
+                            });
                         });
                     }
                     SearchState::Loading => {
                         ui.centered_and_justified(|ui| {
-                            ui.add(Spinner::new().size(24.0).color(ACCENT));
+                            ui.vertical(|ui| {
+                                ui.add(Spinner::new().size(28.0).color(ACCENT));
+                                ui.add_space(14.0);
+                                ui.label(RichText::new("Searching stations…").size(13.0).color(SUBTEXT));
+                            });
                         });
                     }
                     SearchState::Error(e) => {
                         ui.centered_and_justified(|ui| {
-                            ui.label(RichText::new(format!("Error: {e}")).color(Color32::RED));
+                            ui.vertical(|ui| {
+                                ui.label(RichText::new("⚠").size(40.0).color(Color32::from_rgb(200, 70, 70)));
+                                ui.add_space(12.0);
+                                ui.label(RichText::new(format!("Error: {e}")).size(13.0).color(Color32::from_rgb(200, 70, 70)));
+                            });
                         });
                     }
                     SearchState::Done(stations) => {
                         if stations.is_empty() {
                             ui.centered_and_justified(|ui| {
-                                ui.label(RichText::new("No stations found.").color(SUBTEXT));
+                                ui.vertical(|ui| {
+                                    ui.add_space(60.0);
+                                    ui.label(RichText::new("🔍").size(40.0).color(BORDER));
+                                    ui.add_space(14.0);
+                                    ui.label(RichText::new("No stations found").size(14.0).color(SUBTEXT));
+                                });
                             });
                         } else {
-                            ui.label(
-                                RichText::new(format!("{} stations", stations.len()))
-                                    .small()
-                                    .color(SUBTEXT),
-                            );
-                            ui.add_space(6.0);
+                            ui.label(RichText::new(format!("{} stations found", stations.len())).size(11.0).color(SUBTEXT));
+                            ui.add_space(10.0);
 
                             let mut play_action: Option<(String, String)> = None;
 
                             ScrollArea::vertical().show(ui, |ui| {
                                 for station in stations {
-                                    let is_playing = self.now_playing.as_deref()
-                                        == Some(station.name.as_str());
+                                    let is_playing = self.now_playing.as_deref() == Some(station.name.as_str());
 
-                                    let row_fill = if is_playing { SURFACE2 } else { SURFACE };
                                     let row_frame = Frame::new()
-                                        .fill(row_fill)
-                                        .inner_margin(Margin::symmetric(10, 8))
-                                        .corner_radius(6.0)
-                                        .stroke(if is_playing {
-                                            Stroke::new(1.0, ACCENT)
-                                        } else {
-                                            Stroke::NONE
-                                        });
+                                        .fill(if is_playing { SURFACE2 } else { SURFACE })
+                                        .inner_margin(Margin::symmetric(14, 10))
+                                        .corner_radius(10.0)
+                                        .stroke(if is_playing { Stroke::new(1.0, ACCENT) } else { Stroke::new(1.0, BORDER) });
 
                                     row_frame.show(ui, |ui| {
                                         ui.horizontal(|ui| {
-                                            // left: name + meta
                                             ui.vertical(|ui| {
                                                 ui.label(
-                                                    RichText::new(&station.name)
-                                                        .size(13.0)
-                                                        .color(TEXT)
-                                                        .strong(),
+                                                    RichText::new(&station.name).size(13.5)
+                                                        .color(if is_playing { ACCENT } else { TEXT }).strong(),
                                                 );
+                                                ui.add_space(3.0);
                                                 let mut chips: Vec<String> = Vec::new();
-                                                if let Some(c) = &station.country { if !c.is_empty() { chips.push(format!("🌍 {c}")); } }
-                                                if let Some(g) = &station.genre   { if !g.is_empty() { chips.push(format!("🎵 {}", truncate(g, 30))); } }
+                                                if let Some(c) = &station.country { if !c.is_empty() { chips.push(c.clone()); } }
+                                                if let Some(g) = &station.genre   { if !g.is_empty() { chips.push(truncate(g, 28).to_string()); } }
                                                 if let Some(br) = station.bitrate  { if br > 0 { chips.push(format!("{br} kbps")); } }
                                                 if let Some(co) = &station.codec   { if !co.is_empty() { chips.push(co.clone()); } }
                                                 if !chips.is_empty() {
-                                                    ui.label(
-                                                        RichText::new(chips.join("  ·  "))
-                                                            .size(11.0)
-                                                            .color(SUBTEXT),
-                                                    );
+                                                    ui.label(RichText::new(chips.join("  ·  ")).size(11.0).color(SUBTEXT));
                                                 }
                                             });
-
-                                            // right: play button
-                                            ui.with_layout(
-                                                Layout::right_to_left(egui::Align::Center),
-                                                |ui| {
-                                                    if is_playing {
-                                                        ui.label(
-                                                            RichText::new("▶ playing")
-                                                                .size(11.0)
-                                                                .color(GREEN),
-                                                        );
-                                                    } else {
-                                                        let btn = egui::Button::new(
-                                                            RichText::new("▶").color(Color32::WHITE),
-                                                        )
-                                                        .fill(ACCENT_DIM)
-                                                        .corner_radius(4.0)
-                                                        .min_size(Vec2::new(28.0, 24.0));
-                                                        if ui.add(btn).clicked() {
-                                                            play_action = Some((
-                                                                station.name.clone(),
-                                                                station.url.clone(),
-                                                            ));
-                                                        }
+                                            ui.with_layout(Layout::right_to_left(egui::Align::Center), |ui| {
+                                                if is_playing {
+                                                    ui.label(RichText::new("▶  Playing").size(11.0).color(ACCENT).strong());
+                                                } else {
+                                                    let btn = egui::Button::new(RichText::new("▶").size(13.0).color(Color32::BLACK))
+                                                        .fill(ACCENT).corner_radius(7.0).min_size(Vec2::new(34.0, 30.0));
+                                                    if ui.add(btn).clicked() {
+                                                        play_action = Some((station.name.clone(), station.url.clone()));
                                                     }
-                                                },
-                                            );
+                                                }
+                                            });
                                         });
                                     });
-
-                                    ui.add_space(4.0);
+                                    ui.add_space(5.0);
                                 }
                             });
 
                             drop(state);
-
                             if let Some((name, url)) = play_action {
                                 self.player.play(&url);
                                 self.now_playing = Some(name);
                             }
-
                             return;
                         }
                     }
