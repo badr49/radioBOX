@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>radioBOX</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div id="app-frame">
+
+  <!-- ── Header ─────────────────────────────────────────────────────────── -->
+  <header id="header">
+    <div id="header-top">
+      <div id="wordmark">
+        <span class="logo-text">radio</span><span class="logo-accent">BOX</span>
+        <span class="logo-dot"></span>
+      </div>
+
+      <!-- Genre pill strip -->
+      <nav id="genre-nav" role="navigation" aria-label="Genres">
+        <button class="pill pill--special active" data-genre="">⭐ Top Rated</button>
+        <button class="pill" data-genre="Lo-fi">Lo-fi</button>
+        <button class="pill" data-genre="Jazz">Jazz</button>
+        <button class="pill" data-genre="Rock">Rock</button>
+        <button class="pill" data-genre="Classical">Classical</button>
+        <button class="pill" data-genre="Chill">Chill</button>
+        <button class="pill" data-genre="Blues">Blues</button>
+        <button class="pill" data-genre="Electronic">Electronic</button>
+        <button class="pill" data-genre="Ambient">Ambient</button>
+        <button class="pill" data-genre="Pop">Pop</button>
+        <button class="pill" data-genre="Metal">Metal</button>
+        <button class="pill" data-genre="Hip Hop">Hip Hop</button>
+        <button class="pill" data-genre="R&B">R&amp;B</button>
+        <button class="pill" data-genre="Soul">Soul</button>
+        <button class="pill" data-genre="Funk">Funk</button>
+        <button class="pill" data-genre="Reggae">Reggae</button>
+        <button class="pill" data-genre="Country">Country</button>
+        <button class="pill" data-genre="Folk">Folk</button>
+        <button class="pill" data-genre="Punk">Punk</button>
+        <button class="pill" data-genre="Indie">Indie</button>
+        <button class="pill" data-genre="Latin">Latin</button>
+        <button class="pill" data-genre="House">House</button>
+        <button class="pill" data-genre="Techno">Techno</button>
+        <button class="pill" data-genre="Drum and Bass">Drum &amp; Bass</button>
+        <button class="pill" data-genre="Trance">Trance</button>
+        <button class="pill" data-genre="Dubstep">Dubstep</button>
+        <button class="pill" data-genre="Synthwave">Synthwave</button>
+        <button class="pill" data-genre="Retrowave">Retrowave</button>
+        <button class="pill" data-genre="Vaporwave">Vaporwave</button>
+        <button class="pill" data-genre="Soundtrack">Soundtrack</button>
+        <button class="pill" data-genre="World">World</button>
+        <button class="pill" data-genre="Disco">Disco</button>
+        <button class="pill" data-genre="Ska">Ska</button>
+        <button class="pill" data-genre="News">News</button>
+        <button class="pill" data-genre="Talk">Talk</button>
+        <button class="pill" data-genre="Sports">Sports</button>
+      </nav>
+
+      <!-- Filter toggle -->
+      <button id="filter-btn" aria-label="Toggle filters" aria-expanded="false" title="Filters">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M1 3h14M4 8h8M7 13h2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Filter row (collapsed by default) -->
+    <div id="filter-row" aria-hidden="true">
+      <input id="f-name"    class="filter-input" type="text" placeholder="Station name" autocomplete="off" />
+      <input id="f-genre"   class="filter-input" type="text" placeholder="Genre / tag" autocomplete="off" />
+      <input id="f-country" class="filter-input" type="text" placeholder="Country code (e.g. US)" autocomplete="off" maxlength="3" />
+      <input id="f-codec"   class="filter-input" type="text" placeholder="Codec (e.g. MP3)" autocomplete="off" />
+      <button id="search-btn">Search</button>
+    </div>
+  </header>
+
+  <!-- ── Main content ────────────────────────────────────────────────────── -->
+  <main id="main">
+    <div id="status-bar"></div>
+    <div id="station-list"></div>
+  </main>
+
+  <!-- ── Now-playing bar ────────────────────────────────────────────────── -->
+  <footer id="now-playing" aria-live="polite" hidden>
+    <div id="np-left">
+      <span class="playing-dot" aria-hidden="true"></span>
+      <div id="np-info">
+        <span id="np-title">—</span>
+        <div id="np-meta"></div>
+      </div>
+    </div>
+    <div id="np-right">
+      <label id="vol-label" for="vol-slider">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M3 6H1v4h2l4 3V3L3 6z" fill="currentColor"/>
+          <path d="M11 5a4 4 0 0 1 0 6M13.5 3a7 7 0 0 1 0 10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+        <span id="vol-pct">60%</span>
+      </label>
+      <input id="vol-slider" type="range" min="0" max="100" value="60" aria-label="Volume" />
+      <button id="stop-btn">⏹ Stop</button>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</div>
+</body>
+</html>

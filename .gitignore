@@ -1,1 +1,15 @@
-/target
+# Rust / Tauri build artifacts
+src-tauri/target/
+src-tauri/gen/
+target/
+
+# Editor
+.vscode/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+#scripts
+gen_icon.py

@@ -1,22 +1,18 @@
 use crate::config::{RadioStation, StationQuery};
 use reqwest::Client;
 
-// ── Codec quality ranking (higher = better) ───────────────────────────────────
-
 fn codec_rank(codec: Option<&str>) -> u8 {
     match codec.map(|s| s.to_uppercase()).as_deref() {
-        Some("FLAC")      => 6,
-        Some("AAC+")      => 5,
-        Some("AAC")       => 4,
-        Some("MP3")       => 3,
-        Some("OGG")       => 2,
+        Some("FLAC")                          => 6,
+        Some("AAC+")                          => 5,
+        Some("AAC")                           => 4,
         Some("AAC+,H.264") | Some("AAC,H.264") => 4,
-        Some("MP4") | Some("FLV") => 1,
-        _                 => 0, // UNKNOWN or anything else
+        Some("MP3")                           => 3,
+        Some("OGG")                           => 2,
+        Some("MP4") | Some("FLV")             => 1,
+        _                                     => 0,
     }
 }
-
-// ── Station search ────────────────────────────────────────────────────────────
 
 pub async fn fetch_top_voted(
     client: &Client,
@@ -42,8 +38,6 @@ pub async fn fetch_stations(
     let mut params: Vec<(&str, String)> = Vec::new();
 
     if let Some(tag) = query.genre {
-        // lowercase + tagList = case-insensitive partial match
-        // e.g. "jazz" matches "jazz", "smooth jazz", "90s jazz"
         params.push(("tagList", tag.to_lowercase()));
     }
     if let Some(country) = query.country {
@@ -67,10 +61,8 @@ pub async fn fetch_stations(
         .json::<Vec<RadioStation>>()
         .await?;
 
-    // drop entries with no name or no url
     stations.retain(|s| !s.name.is_empty() && !s.url.is_empty());
 
-    // sort: codec quality desc, then bitrate desc
     stations.sort_by(|a, b| {
         let rank_a = codec_rank(a.codec.as_deref());
         let rank_b = codec_rank(b.codec.as_deref());
