@@ -47,6 +47,13 @@ const $fCodec    = document.getElementById('f-codec');
 const $nav = document.getElementById('genre-nav');
 let dragX = 0, scrollX = 0, dragging = false;
 
+function setActiveGenre(genre) {
+  activeGenre = genre;
+  $nav.querySelectorAll('.pill').forEach(p => {
+    p.classList.toggle('active', p.dataset.genre === genre);
+  });
+}
+
 $nav.addEventListener('mousedown', e => {
   dragging = true; dragX = e.pageX; scrollX = $nav.scrollLeft;
   $nav.style.cursor = 'grabbing';
@@ -64,9 +71,8 @@ window.addEventListener('mouseup', () => {
 $nav.addEventListener('click', async e => {
   const pill = e.target.closest('.pill');
   if (!pill || Math.abs($nav.scrollLeft - scrollX) > 4) return;
-  $nav.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
-  pill.classList.add('active');
-  activeGenre = pill.dataset.genre;
+  setActiveGenre(pill.dataset.genre);
+  $fGenre.value = activeGenre;
   await load(activeGenre === '' ? { top: true } : { genre: activeGenre });
 });
 
@@ -86,7 +92,7 @@ document.getElementById('search-btn').addEventListener('click', runSearch);
 async function runSearch() {
   const q = {
     name:        $fName.value.trim()             || null,
-    genre:       $fGenre.value.trim() || activeGenre || null,
+    genre:       $fGenre.value.trim()            || null,
     country:     $fCountry.value.trim().toUpperCase() || null,
     codec:       $fCodec.value.trim()            || null,
     min_bitrate: null,
@@ -94,6 +100,20 @@ async function runSearch() {
   if (!q.name && !q.genre && !q.country && !q.codec) { await load({ top: true }); return; }
   await load({ query: q });
 }
+
+$fGenre.addEventListener('input', () => {
+  const genre = $fGenre.value.trim();
+  const matchingPill = Array.from($nav.querySelectorAll('.pill'))
+    .find(p => p.dataset.genre.toLowerCase() === genre.toLowerCase());
+
+  if (matchingPill) {
+    setActiveGenre(matchingPill.dataset.genre);
+    return;
+  }
+
+  activeGenre = '';
+  $nav.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+});
 
 // ── Data loading ──────────────────────────────────────────────────────────────
 async function load(opts) {
